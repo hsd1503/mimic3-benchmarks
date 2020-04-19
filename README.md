@@ -91,15 +91,15 @@ Here are the required steps to build the benchmark. It assumes that you already 
 
        python -m mimic3benchmark.scripts.extract_episodes_from_subjects data/root/
 
-4.1 split a small fraction of data to better look files, for create other benchmark dataset. 
+5. split a small fraction of data to better look files, for create other benchmark dataset. 
 
        python -m mimic3benchmark.scripts.split_small data/root/ data/small/
 
-1. The next command splits the whole dataset into training and testing sets. Note that the train/test split is the same of all tasks.
+6. The next command splits the whole dataset into training and testing sets. Note that the train/test split is the same of all tasks.
 
        python -m mimic3benchmark.scripts.split_train_and_test data/root/
 	
-2. The following commands will generate task-specific datasets, which can later be used in models. These commands are independent, if you are going to work only on one benchmark task, you can run only the corresponding command.
+7. The following commands will generate task-specific datasets, which can later be used in models. These commands are independent, if you are going to work only on one benchmark task, you can run only the corresponding command.
 
        python -m mimic3benchmark.scripts.create_in_hospital_mortality data/root/ data/in-hospital-mortality/
        python -m mimic3benchmark.scripts.create_decompensation data/root/ data/decompensation/
