@@ -6,9 +6,9 @@ import shutil
 import argparse
 
 
-def move_to_partition(args, patients, partition):
+def move_to_partition(args, patients):
     if not os.path.exists(args.dest_path):
-        os.mkdir(args.dest_path, partition)
+        os.mkdir(args.dest_path)
     for patient in patients:
         src = os.path.join(args.subjects_root_path, patient)
         dest = os.path.join(args.dest_path, patient)
@@ -31,7 +31,7 @@ def main():
     folders = list((filter(str.isdigit, folders)))
     samll_patients = [x for x in folders if x in small_set]
 
-    move_to_partition(args, samll_patients, "small")
+    move_to_partition(args, samll_patients)
 
 if __name__ == '__main__':
     main()
