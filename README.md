@@ -153,6 +153,11 @@ You can change the size of the training data of linear models in the scripts and
 Use the following command to extract validation set from the training set. This step is required for running the baseline models. Likewise the train/test split, the train/validation split is the same for all tasks.
 
        python -m mimic3models.split_train_val {dataset-directory}
+       python -m mimic3models.split_train_val data/in-hospital-mortality
+       python -m mimic3models.split_train_val data/decompensation
+       python -m mimic3models.split_train_val data/length-of-stay
+       python -m mimic3models.split_train_val data/phenotyping
+       python -m mimic3models.split_train_val data/multitask
        
 `{dataset-directory}` can be either `data/in-hospital-mortality`, `data/decompensation`, `data/length-of-stay`, `data/phenotyping` or `data/multitask`.
 
