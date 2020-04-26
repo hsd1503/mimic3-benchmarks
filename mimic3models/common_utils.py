@@ -6,8 +6,24 @@ import os
 import json
 import random
 
+import shutil
+import torch
+from matplotlib import pyplot as plt
+from time import gmtime, strftime
+
 from mimic3models.feature_extractor import extract_features
 
+def get_time_str():
+    return strftime("%Y%m%d_%H%M%S", gmtime())
+
+def save_checkpoint(state, is_best, path):
+    filename = 'checkpoint_{0}_{1:.4f}.pth'.format(state['step'], state['best_val'])
+    filename = os.path.join(path, filename)
+    torch.save(state, filename)
+    print('save {} done!'.format(filename))
+    if is_best:
+        directory = os.path.dirname(filename)
+        shutil.copyfile(filename, os.path.join(directory, 'best_checkpoint.pth'))
 
 def convert_to_dict(data, header, channel_info):
     """ convert data from readers output in to array of arrays format """
@@ -106,6 +122,8 @@ def add_common_arguments(parser):
                         help='beta_1 param for Adam optimizer')
     parser.add_argument('--verbose', type=int, default=2)
     parser.add_argument('--size_coef', type=float, default=4.0)
+    parser.add_argument('--gpu_id', type=int, default=0)
+    parser.add_argument('--run_id', type=int, default=0)
     parser.add_argument('--normalizer_state', type=str, default=None,
                         help='Path to a state file of a normalizer. Leave none if you want to '
                              'use one of the provided ones.')

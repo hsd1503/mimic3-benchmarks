@@ -21,9 +21,9 @@ import torch.optim as optim
 import torch.nn.functional as F
 
 """
-python -um mimic3models.length_of_stay.main_pytorch --network mimic3models/pytorch_models/transformer.py --timestep 1.0 --mode train --batch_size 8 --partition custom --output_dir mimic3models/length_of_stay --gpu_id 4 --small_part True
+python -um mimic3models.length_of_stay.main_pytorch --network mimic3models/pytorch_models/transformer.py --timestep 1.0 --mode train --batch_size 128 --partition custom --output_dir mimic3models/length_of_stay/exp --gpu_id 4 --run_id 0
 
-python -um mimic3models.length_of_stay.main_pytorch --network mimic3models/pytorch_models/transformer.py --timestep 1.0 --mode test --batch_size 8 --partition custom --output_dir mimic3models/length_of_stay --gpu_id 4 --small_part True
+python -um mimic3models.length_of_stay.main_pytorch --network mimic3models/pytorch_models/transformer.py --timestep 1.0 --mode test --batch_size 128 --partition custom --output_dir mimic3models/length_of_stay/exp --gpu_id 4 --run_id 0
 """
 
 parser = argparse.ArgumentParser()
@@ -36,7 +36,6 @@ parser.add_argument('--data', type=str, help='Path to the data of length-of-stay
                     default=os.path.join(os.path.dirname(__file__), '../../data/length-of-stay/'))
 parser.add_argument('--output_dir', type=str, help='Directory relative which all output files are stored',
                     default='.')
-parser.add_argument('--gpu_id', help='gpu id', type=str, default='0')
 args = parser.parse_args()
 print(args)
 
@@ -93,14 +92,17 @@ print("==> using model {}".format(args.network))
 model_module = imp.load_source(os.path.basename(args.network), args.network)
 model = model_module.Network(**args_dict)
 model.to(device)
-suffix = "{}.bs{}{}{}.ts{}.partition={}".format("" if not args.deep_supervision else ".dsup",
+suffix = "{}.bs{}{}{}.ts{}.partition_{}.run{}".format("" if not args.deep_supervision else ".dsup",
                                                 args.batch_size,
                                                 ".L1{}".format(args.l1) if args.l1 > 0 else "",
                                                 ".L2{}".format(args.l2) if args.l2 > 0 else "",
                                                 args.timestep,
-                                                args.partition)
+                                                args.partition,
+                                                args.run_id)
 model.final_name = args.prefix + model.say_name() + suffix
 print("==> model.final_name:", model.final_name)
+save_path = os.path.join(args.output_dir, model.final_name)
+os.makedirs(save_path, exist_ok=True)
 
 # Compile the model
 print("==> compiling the model")
@@ -141,8 +143,14 @@ else:
 if args.mode == 'train':
     # Prepare training
     step = 0
-    history = []
-    path = os.path.join(args.output_dir, 'keras_states/' + model.final_name + '.chunk{epoch}.test{val_loss}.state')
+    all_loss = []
+    best_val = 1e9
+    
+    print('start training, will save to {}'.format(save_path))
+    with open(os.path.join(save_path, 'log.txt'), 'w') as fout:
+        print(common_utils.get_time_str(), file=fout)    
+    
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.3, patience=10)
     for i_epoch in tqdm(range(args.epochs), desc='Training epoch: '):
 
         for i_step in tqdm(range(train_data_gen.steps)):
@@ -159,11 +167,12 @@ if args.mode == 'train':
             loss.backward()
             optimizer.step()
             step += 1
-            if i_step % 100 == 0:
-                print(loss.item())
+            all_loss.append(loss.item())
+            if i_step % train_nbatches == 0:
+                print(np.mean(all_loss[:-train_nbatches:]))
 
             ### validation
-            if step % val_data_gen.steps == 0:
+            if step % val_nbatches == 0:
                 model.eval()
 
                 y_true = []
@@ -171,10 +180,8 @@ if args.mode == 'train':
                 for _ in tqdm(range(val_data_gen.steps)):
                     x, _, y = val_data_gen.next(return_y_true=True)
                     x = torch.tensor(x, dtype=torch.float).to(device)
-                    y = torch.tensor(y, dtype=torch.long).to(device)
                     pred = model(x)
                     pred = pred.cpu().data.numpy()
-                    print(pred)
                     if isinstance(x, list) and len(x) == 2:  # deep supervision
                         pass
                     else:
@@ -193,17 +200,42 @@ if args.mode == 'train':
                     ret = metrics.print_metrics_custom_bins(y_true, predictions)
                 if args.partition == 'none':
                     ret = metrics.print_metrics_regression(y_true, predictions)
-                for k, v in ret.items():
-                    logs[dataset + '_' + k] = v
-                history.append(ret)
-
-                print('history ', history)
-
+                cur_val = ret['mse']
+                
+                scheduler.step(cur_val)
+                current_lr = optimizer.param_groups[0]['lr']
+                if current_lr < 1e-5:
+                    with open(os.path.join(save_path, 'log.txt'), 'a') as fout:
+                        print('Early stop at step {}'.format(step), file=fout)
+                    exit()
+                
+                with open(os.path.join(save_path, 'log.txt'), 'a') as fout:
+                    print(ret, file=fout)
+                is_best = cur_val < best_val
+                if is_best:
+                    best_val = cur_val
+                    ### save model
+                    common_utils.save_checkpoint({
+                        'epoch': i_epoch,
+                        'step': step,
+                        'state_dict': model.state_dict(),
+                        'best_val': best_val,
+                        'res': ret,
+                        'optimizer': optimizer.state_dict(),
+                    }, is_best, path=save_path)
+                
+                if args.small_part:
+                    exit()
 
 elif args.mode == 'test':
     # ensure that the code uses test_reader
     del train_data_gen
     del val_data_gen
+    
+    ### load model
+    checkpoint = torch.load(os.path.join(save_path, 'best_checkpoint.pth'))
+    model.load_state_dict(checkpoint['state_dict'])
+    print('start testing, load best_checkpoint.pth from {}'.format(save_path))
 
     names = []
     ts = []
@@ -211,7 +243,7 @@ elif args.mode == 'test':
     predictions = []
 
     if args.deep_supervision:
-        ### not start yet
+        ### not implement yet
         pass
     else:
         del train_reader
@@ -236,13 +268,15 @@ elif args.mode == 'test':
             cur_ts = ret["ts"]
 
             x = torch.tensor(x, dtype=torch.float).to(device)
-            y = torch.tensor(y, dtype=torch.long).to(device)
             pred = model(x)
             pred = pred.cpu().data.numpy()
             predictions += list(pred)
             labels += list(y)
             names += list(cur_names)
             ts += list(cur_ts)
+            
+            if args.small_part:
+                break
 
     if args.partition == 'log':
         predictions = [metrics.get_estimate_log(x, 10) for x in predictions]
@@ -254,8 +288,7 @@ elif args.mode == 'test':
         metrics.print_metrics_regression(labels, predictions)
         predictions = [x[0] for x in predictions]
 
-    path = os.path.join(os.path.join(args.output_dir, "test_predictions", os.path.basename(args.load_state)) + ".csv")
-    utils.save_results(names, ts, predictions, labels, path)
+    utils.save_results(names, ts, predictions, labels, os.path.join(save_path, 'test_predictions.csv'))
 
 else:
     raise ValueError("Wrong value for args.mode")
