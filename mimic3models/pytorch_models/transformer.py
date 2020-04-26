@@ -11,10 +11,10 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
     
-class Transformer1d(nn.Module):
+class Network(nn.Module):
     """
     Input:
-        X: (n_samples, n_channel, n_length)
+        X: (n_samples, n_length, n_channel)
         Y: (n_samples)
         
     Output:
@@ -29,7 +29,7 @@ class Transformer1d(nn.Module):
     """
 
     def __init__(self, n_classes, d_model, nhead, dim_feedforward, dropout, verbose=False, **kwargs):
-        super(Transformer1d, self).__init__()
+        super(Network, self).__init__()
 
         self.d_model = d_model
         self.nhead = nhead
@@ -51,8 +51,8 @@ class Transformer1d(nn.Module):
         
         out = x
         if self.verbose:
-            print('input (n_samples, n_channel, n_length)', out.shape)
-        out = out.permute(2, 0, 1)
+            print('input (n_samples, n_length, n_channel)', out.shape)
+        out = out.permute(1, 0, 2)
         if self.verbose:
             print('transpose (n_length, n_samples, n_channel)', out.shape)
 
@@ -69,3 +69,11 @@ class Transformer1d(nn.Module):
             print('dense', out.shape)
         
         return out    
+    
+    def say_name(self):
+        """
+        not finished
+        """
+        return "{}".format('transformer')    
+    
+    

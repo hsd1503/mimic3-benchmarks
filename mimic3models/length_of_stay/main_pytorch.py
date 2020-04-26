@@ -13,7 +13,6 @@ from mimic3benchmark.readers import LengthOfStayReader
 
 from mimic3models.preprocessing import Discretizer, Normalizer
 from mimic3models import metrics
-from mimic3models import keras_utils
 from mimic3models import common_utils
 
 import torch
@@ -22,7 +21,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 
 """
-python -um mimic3models.length_of_stay.main --network mimic3models/pytorch_models/transformer.py --timestep 1.0 --mode train --batch_size 8 --partition custom --output_dir mimic3models/length_of_stay
+python -um mimic3models.length_of_stay.main_pytorch --network mimic3models/pytorch_models/transformer.py --timestep 1.0 --mode train --batch_size 8 --partition custom --output_dir mimic3models/length_of_stay --gpu_id 4
 """
 
 parser = argparse.ArgumentParser()
@@ -35,7 +34,7 @@ parser.add_argument('--data', type=str, help='Path to the data of length-of-stay
                     default=os.path.join(os.path.dirname(__file__), '../../data/length-of-stay/'))
 parser.add_argument('--output_dir', type=str, help='Directory relative which all output files are stored',
                     default='.')
-parser.add_argument('--gpu_id', dest='gpu id', type=str, default='0')
+parser.add_argument('--gpu_id', help='gpu id', type=str, default='0')
 args = parser.parse_args()
 print(args)
 
@@ -79,10 +78,11 @@ normalizer.load_params(normalizer_state)
 args_dict = dict(args._get_kwargs())
 args_dict['header'] = discretizer_header
 args_dict['task'] = 'los'
-args_dict['nhead'] = 32
+args_dict['nhead'] = 1
 args_dict['dim_feedforward'] = 128
 args_dict['dropout'] = 0.5
-args_dict['d_model'] = 2
+args_dict['d_model'] = 76
+args_dict['verbose'] = False
 args_dict['n_classes'] = (1 if args.partition == 'none' else 10)
 
 
@@ -139,16 +139,21 @@ else:
 if args.mode == 'train':
     # Prepare training
     path = os.path.join(args.output_dir, 'keras_states/' + model.final_name + '.chunk{epoch}.test{val_loss}.state')
-    for _ in tqdm(range(args.epochs), desc='Training epoch: '):
+    for i_epoch in tqdm(range(args.epochs), desc='Training epoch: '):
 
-        for batch in tqdm(train_data_gen, desc='Step: '):
+        for i_step in tqdm(range(train_data_gen.steps)):
 
-            input_x, input_y, _ = tuple(t.to(device) for t in batch)
+            input_x, input_y, _ = train_data_gen.next(return_y_true=True)            
+            input_x = torch.tensor(input_x, dtype=torch.float).to(device)
+            input_y = torch.tensor(input_y, dtype=torch.long).to(device)
+
             pred = model(input_x)
             loss = loss_function(pred, input_y)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            if i_step % 100 == 0:
+                print(loss.item())
 
 elif args.mode == 'test':
     # ensure that the code uses test_reader
