@@ -21,7 +21,9 @@ import torch.optim as optim
 import torch.nn.functional as F
 
 """
-python -um mimic3models.length_of_stay.main_pytorch --network mimic3models/pytorch_models/transformer.py --timestep 1.0 --mode train --batch_size 8 --partition custom --output_dir mimic3models/length_of_stay --gpu_id 4
+python -um mimic3models.length_of_stay.main_pytorch --network mimic3models/pytorch_models/transformer.py --timestep 1.0 --mode train --batch_size 8 --partition custom --output_dir mimic3models/length_of_stay --gpu_id 4 --small_part True
+
+python -um mimic3models.length_of_stay.main_pytorch --network mimic3models/pytorch_models/transformer.py --timestep 1.0 --mode test --batch_size 8 --partition custom --output_dir mimic3models/length_of_stay --gpu_id 4 --small_part True
 """
 
 parser = argparse.ArgumentParser()
@@ -138,12 +140,16 @@ else:
                                   shuffle=False)
 if args.mode == 'train':
     # Prepare training
+    step = 0
+    history = []
     path = os.path.join(args.output_dir, 'keras_states/' + model.final_name + '.chunk{epoch}.test{val_loss}.state')
     for i_epoch in tqdm(range(args.epochs), desc='Training epoch: '):
 
         for i_step in tqdm(range(train_data_gen.steps)):
 
-            input_x, input_y, _ = train_data_gen.next(return_y_true=True)            
+            ### training
+            model.train()
+            input_x, input_y, _ = train_data_gen.next(return_y_true=True)
             input_x = torch.tensor(input_x, dtype=torch.float).to(device)
             input_y = torch.tensor(input_y, dtype=torch.long).to(device)
 
@@ -152,8 +158,47 @@ if args.mode == 'train':
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            step += 1
             if i_step % 100 == 0:
                 print(loss.item())
+
+            ### validation
+            if step % val_data_gen.steps == 0:
+                model.eval()
+
+                y_true = []
+                predictions = []
+                for _ in tqdm(range(val_data_gen.steps)):
+                    x, _, y = val_data_gen.next(return_y_true=True)
+                    x = torch.tensor(x, dtype=torch.float).to(device)
+                    y = torch.tensor(y, dtype=torch.long).to(device)
+                    pred = model(x)
+                    pred = pred.cpu().data.numpy()
+                    print(pred)
+                    if isinstance(x, list) and len(x) == 2:  # deep supervision
+                        pass
+                    else:
+                        if pred.shape[-1] == 1:
+                            y_true += list(y.flatten())
+                            predictions += list(pred.flatten())
+                        else:
+                            y_true += list(y)
+                            predictions += list(pred)
+                print('\n')
+                if args.partition == 'log':
+                    predictions = [metrics.get_estimate_log(x, 10) for x in predictions]
+                    ret = metrics.print_metrics_log_bins(y_true, predictions)
+                if args.partition == 'custom':
+                    predictions = [metrics.get_estimate_custom(x, 10) for x in predictions]
+                    ret = metrics.print_metrics_custom_bins(y_true, predictions)
+                if args.partition == 'none':
+                    ret = metrics.print_metrics_regression(y_true, predictions)
+                for k, v in ret.items():
+                    logs[dataset + '_' + k] = v
+                history.append(ret)
+
+                print('history ', history)
+
 
 elif args.mode == 'test':
     # ensure that the code uses test_reader
@@ -166,34 +211,8 @@ elif args.mode == 'test':
     predictions = []
 
     if args.deep_supervision:
-        del train_data_loader
-        del val_data_loader
-        test_data_loader = common_utils.DeepSupervisionDataLoader(dataset_dir=os.path.join(args.data, 'test'),
-                                                                  listfile=os.path.join(args.data, 'test_listfile.csv'),
-                                                                  small_part=args.small_part)
-        test_data_gen = utils.BatchGenDeepSupervision(test_data_loader, args.partition,
-                                                      discretizer, normalizer, args.batch_size,
-                                                      shuffle=False, return_names=True)
-        for i in range(test_data_gen.steps):
-            print("\tdone {}/{}".format(i, test_data_gen.steps), end='\r')
-
-            ret = test_data_gen.next(return_y_true=True)
-            (x, y_processed, y) = ret["data"]
-            cur_names = np.array(ret["names"]).repeat(x[0].shape[1], axis=-1)
-            cur_ts = ret["ts"]
-            for single_ts in cur_ts:
-                ts += single_ts
-
-            pred = model.predict(x, batch_size=args.batch_size)
-            if pred.shape[-1] == 1:  # regression
-                pred_flatten = pred.flatten()
-            else:  # classification
-                pred_flatten = pred.reshape((-1, 10))
-            for m, t, p, name in zip(x[1].flatten(), y.flatten(), pred_flatten, cur_names.flatten()):
-                if np.equal(m, 1):
-                    labels.append(t)
-                    predictions.append(p)
-                    names.append(name)
+        ### not start yet
+        pass
     else:
         del train_reader
         del val_reader
@@ -212,12 +231,14 @@ elif args.mode == 'test':
             print("predicting {} / {}".format(i, test_data_gen.steps), end='\r')
 
             ret = test_data_gen.next(return_y_true=True)
-            (x, y_processed, y) = ret["data"]
+            (x, _, y) = ret["data"]
             cur_names = ret["names"]
             cur_ts = ret["ts"]
 
-            x = np.array(x)
-            pred = model.predict_on_batch(x)
+            x = torch.tensor(x, dtype=torch.float).to(device)
+            y = torch.tensor(y, dtype=torch.long).to(device)
+            pred = model(x)
+            pred = pred.cpu().data.numpy()
             predictions += list(pred)
             labels += list(y)
             names += list(cur_names)
