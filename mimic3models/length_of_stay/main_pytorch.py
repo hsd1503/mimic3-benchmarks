@@ -21,9 +21,10 @@ import torch.optim as optim
 import torch.nn.functional as F
 
 """
-python -um mimic3models.length_of_stay.main_pytorch --network mimic3models/pytorch_models/transformer.py --timestep 1.0 --mode train --batch_size 128 --partition custom --output_dir mimic3models/length_of_stay/exp --gpu_id 4 --run_id 0
+python -um mimic3models.length_of_stay.main_pytorch --network mimic3models/pytorch_models/transformer.py --timestep 1.0 --mode train --batch_size 8 --partition custom --output_dir mimic3models/length_of_stay/exp --gpu_id 4 --run_id 0
 
-python -um mimic3models.length_of_stay.main_pytorch --network mimic3models/pytorch_models/transformer.py --timestep 1.0 --mode test --batch_size 128 --partition custom --output_dir mimic3models/length_of_stay/exp --gpu_id 4 --run_id 0
+
+python -um mimic3models.length_of_stay.main_pytorch --network mimic3models/pytorch_models/transformer.py --timestep 1.0 --mode test --batch_size 8 --partition custom --output_dir mimic3models/length_of_stay/exp --gpu_id 4 --run_id 0
 """
 
 parser = argparse.ArgumentParser()
@@ -120,8 +121,8 @@ if args.deep_supervision:
                                                  discretizer, normalizer, args.batch_size, shuffle=False)
 else:
     # Set number of batches in one epoch
-    train_nbatches = 2000
-    val_nbatches = 1000
+    train_nbatches = 500
+    val_nbatches = 500
     if args.small_part:
         train_nbatches = 20
         val_nbatches = 20
