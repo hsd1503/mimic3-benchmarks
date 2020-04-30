@@ -21,7 +21,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 
 """
-python -um mimic3models.length_of_stay.main_pytorch --network mimic3models/pytorch_models/transformer.py --timestep 1.0 --mode train --batch_size 8 --partition custom --output_dir mimic3models/length_of_stay/exp --gpu_id 4 --run_id 0
+python -um mimic3models.length_of_stay.main_pytorch --network mimic3models/pytorch_models/transformer.py --timestep 1.0 --mode train --batch_size 1 --partition custom --output_dir mimic3models/length_of_stay/exp --gpu_id 4 --run_id 0 --prefix new_
 
 
 python -um mimic3models.length_of_stay.main_pytorch --network mimic3models/pytorch_models/transformer.py --timestep 1.0 --mode test --batch_size 8 --partition custom --output_dir mimic3models/length_of_stay/exp --gpu_id 4 --run_id 0
@@ -80,10 +80,11 @@ normalizer.load_params(normalizer_state)
 args_dict = dict(args._get_kwargs())
 args_dict['header'] = discretizer_header
 args_dict['task'] = 'los'
-args_dict['nhead'] = 1
+args_dict['nhead'] = 8
 args_dict['dim_feedforward'] = 128
 args_dict['dropout'] = 0.5
 args_dict['d_model'] = 76
+args_dict['d_emb'] = 128
 args_dict['verbose'] = False
 args_dict['n_classes'] = (1 if args.partition == 'none' else 10)
 
